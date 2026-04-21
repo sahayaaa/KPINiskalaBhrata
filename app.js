@@ -48,7 +48,21 @@ const userAccounts = {
 
 let currentUser = "";
 let draftData = {}; 
-let database = JSON.parse(localStorage.getItem('kpi_v2026_final')) || {};
+let database = {}; // Kita mulai dengan objek kosong, data akan ditarik dari Firebase
+
+// --- FIREBASE SYNC: AMBIL DATA DARI CLOUD SAAT HALAMAN DIBUKA ---
+function syncFromFirebase() {
+    db.collection("kpi_data").doc("v2026_final").get().then((doc) => {
+        if (doc.exists) {
+            database = doc.data();
+            console.log("Data Firebase sinkron!");
+            if (currentUser !== "") renderTable();
+        }
+    }).catch((error) => {
+        console.error("Error mengambil data:", error);
+    });
+}
+syncFromFirebase();
 
 // VARIABEL SORT (none, desc, asc)
 let currentSort = "none";
@@ -85,7 +99,6 @@ function handleLogin() {
     }
 }
 
-// FUNGSI TOGGLE SORT
 function toggleSortMpi() {
     const icon = document.getElementById('sort-icon');
     if (currentSort === "none") {
@@ -111,7 +124,6 @@ function renderTable() {
     let list = isAdmin ? dataStaff : dataStaff.filter(s => s.divisi === currentUser);
     if (isAdmin && filter !== 'all') list = list.filter(s => s.divisi === filter);
 
-    // LOGIKA SORTING MPI
     if (currentSort !== "none") {
         list = [...list].sort((a, b) => {
             const mpiA = parseFloat(database[`${a.id}_${tw}`]?.mpi || 0);
@@ -155,12 +167,21 @@ function calc(id) {
     draftData[`${id}_${tw}`] = { kuan, kual, sine, mpi: mpiStr, status };
 }
 
+// --- FIREBASE SYNC: SIMPAN KE CLOUD ---
 function simpanPermanen() {
     database = { ...database, ...draftData };
-    localStorage.setItem('kpi_v2026_final', JSON.stringify(database));
-    alert("✅ Data Berhasil Disimpan!");
-    draftData = {};
-    if (currentUser === 'admin') renderTable();
+    
+    // Simpan ke Firestore agar Admin bisa lihat dari mana saja
+    db.collection("kpi_data").doc("v2026_final").set(database)
+    .then(() => {
+        alert("✅ Data Berhasil Disetorkan ke Cloud!");
+        draftData = {};
+        if (currentUser === 'admin') renderTable();
+    })
+    .catch((error) => {
+        console.error("Gagal simpan:", error);
+        alert("Gagal simpan ke Cloud. Cek koneksi.");
+    });
 }
 
 function getStatusClass(mpi) {
@@ -223,7 +244,6 @@ function updateAdminDashboards() {
         winners.add(ris.id);
     } else document.getElementById('award-rising').innerText = prevTw ? "-" : "N/A (TW1)";
 
-    // FIXED SYNERGY LOGIC
     const statsForSynergy = dataStaff.map(s => {
         const curr = database[`${s.id}_${tw}`] || { sine: 0 };
         return { nama: s.nama, sine: parseFloat(curr.sine) || 0 };
