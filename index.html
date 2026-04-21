@@ -4,11 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KPI NISKALA 2026</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = { darkMode: 'class' }
     </script>
     <link rel="stylesheet" href="style.css">
+
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCPEpsIU7-o7w3wNjudn9MjoJmSaoM9Vgs",
+            authDomain: "kpiniskalabhrata.firebaseapp.com",
+            databaseURL: "https://kpiniskalabhrata-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "kpiniskalabhrata",
+            storageBucket: "kpiniskalabhrata.firebasestorage.app",
+            messagingSenderId: "288444847794",
+            appId: "1:288444847794:web:409fa2dd0c38f67c88dbab",
+            measurementId: "G-21R8LX7M85"
+        };
+        
+        // Inisialisasi Firebase langsung di awal
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore(); 
+    </script>
 </head>
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300 min-h-screen p-4 md:p-8">
 
@@ -64,11 +84,6 @@
                             <td id="res-mpi-org" class="p-5 text-right font-black">0%</td>
                             <td id="status-mpi-org" class="p-5 text-center text-[10px] w-28"></td>
                         </tr>
-                        <tr class="border-b dark:border-slate-800">
-                            <td class="p-5 text-slate-500 font-bold">Retensi Staff (>70%)</td>
-                            <td id="res-retensi" class="p-5 text-right font-black">0%</td>
-                            <td id="status-retensi" class="p-5 text-center text-[10px] w-28 font-black uppercase"></td>
-                        </tr>
                         <tr>
                             <td class="p-5 text-rose-600 font-bold uppercase">Staff Kritis (Warning)</td>
                             <td id="res-kritis" class="p-5 text-right text-rose-600 text-2xl font-black">0</td>
@@ -79,16 +94,6 @@
                 <div class="bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border dark:border-slate-800 overflow-hidden">
                     <div class="p-5 border-b dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 font-black text-[10px] tracking-widest uppercase">Ranking Performa Divisi</div>
                     <div id="divisi-ranking-body" class="divide-y dark:divide-slate-800"></div>
-                </div>
-            </div>
-
-            <div class="bg-white dark:bg-slate-900 rounded-[2rem] shadow-sm border dark:border-slate-800 overflow-hidden">
-                <div class="p-4 bg-indigo-50 dark:bg-indigo-900/20 border-b dark:border-slate-800 text-center font-black text-xs text-indigo-900 dark:text-indigo-400 uppercase italic">🏆 Dashboard Niskala Excellence Awards</div>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 divide-y md:divide-y-0 md:divide-x dark:divide-slate-800">
-                    <div class="p-8 text-center"><p class="text-[10px] text-slate-400 font-black uppercase mb-1">Supreme Achiever</p><div id="award-supreme" class="font-black text-xl text-indigo-600 dark:text-indigo-400 italic">-</div></div>
-                    <div class="p-8 text-center"><p class="text-[10px] text-slate-400 font-black uppercase mb-1">Best of Divisi</p><div id="award-best-div" class="text-[11px] font-bold leading-relaxed"></div></div>
-                    <div class="p-8 text-center"><p class="text-[10px] text-slate-400 font-black uppercase mb-1">The Rising Star</p><div id="award-rising" class="font-black text-xl text-amber-500 italic">-</div></div>
-                    <div class="p-8 text-center"><p class="text-[10px] text-slate-400 font-black uppercase mb-1">Synergy & Harmony</p><div id="award-synergy" class="font-black text-xl text-emerald-500 italic">-</div></div>
                 </div>
             </div>
         </div>
