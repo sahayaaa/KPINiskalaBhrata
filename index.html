@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="style.css">
 
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
     <script>
         const firebaseConfig = {
             apiKey: "AIzaSyCPEpsIU7-o7w3wNjudn9MjoJmSaoM9Vgs",
@@ -23,8 +23,11 @@
             appId: "1:288444847794:web:409fa2dd0c38f67c88dbab",
             measurementId: "G-21R8LX7M85"
         };
+        
+        // Inisialisasi Firebase
         firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore(); 
+        // Koneksi ke Realtime Database
+        const db = firebase.database(); 
     </script>
 </head>
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300 min-h-screen p-4 md:p-8">
