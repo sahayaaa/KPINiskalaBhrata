@@ -48,18 +48,20 @@ const userAccounts = {
 
 let currentUser = "";
 let draftData = {}; 
-let database = {}; // Kita mulai dengan objek kosong, data akan ditarik dari Firebase
+let database = {}; 
 
-// --- FIREBASE SYNC: AMBIL DATA DARI CLOUD SAAT HALAMAN DIBUKA ---
+// --- REALTIME DATABASE: AMBIL DATA OTOMATIS (LIVE SYNC) ---
 function syncFromFirebase() {
-    db.collection("kpi_data").doc("v2026_final").get().then((doc) => {
-        if (doc.exists) {
-            database = doc.data();
-            console.log("Data Firebase sinkron!");
+    // Menggunakan .on('value') agar jika admin ubah data, dashboard staff ikut update otomatis
+    db.ref("kpi_v2026_final").on('value', (snapshot) => {
+        const val = snapshot.val();
+        if (val) {
+            database = val;
+            console.log("Data Realtime Database sinkron!");
             if (currentUser !== "") renderTable();
         }
-    }).catch((error) => {
-        console.error("Error mengambil data:", error);
+    }, (error) => {
+        console.error("Error sinkronisasi:", error);
     });
 }
 syncFromFirebase();
@@ -167,20 +169,20 @@ function calc(id) {
     draftData[`${id}_${tw}`] = { kuan, kual, sine, mpi: mpiStr, status };
 }
 
-// --- FIREBASE SYNC: SIMPAN KE CLOUD ---
+// --- REALTIME DATABASE: SETOR DATA ---
 function simpanPermanen() {
     database = { ...database, ...draftData };
     
-    // Simpan ke Firestore agar Admin bisa lihat dari mana saja
-    db.collection("kpi_data").doc("v2026_final").set(database)
+    // Simpan ke Realtime Database menggunakan .set()
+    db.ref("kpi_v2026_final").set(database)
     .then(() => {
-        alert("✅ Data Berhasil Disetorkan ke Cloud!");
+        alert("✅ Data Berhasil Disetorkan ke Realtime Database!");
         draftData = {};
         if (currentUser === 'admin') renderTable();
     })
     .catch((error) => {
         console.error("Gagal simpan:", error);
-        alert("Gagal simpan ke Cloud. Cek koneksi.");
+        alert("Gagal simpan. Cek koneksi atau Rules Database.");
     });
 }
 
