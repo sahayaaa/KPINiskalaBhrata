@@ -217,7 +217,6 @@ function updateAdminDashboards() {
     const filter = document.getElementById('filter-divisi').value;
     const prevTw = tw === 'tw2' ? 'tw1' : (tw === 'tw3' ? 'tw2' : null);
     
-    // Tentukan list staff yang akan dihitung (sinkron dengan filter tabel)
     let relevantStaff = dataStaff;
     if (filter !== 'all') {
         relevantStaff = dataStaff.filter(s => s.divisi === filter);
@@ -238,7 +237,9 @@ function updateAdminDashboards() {
         
         sumMpi += m;
         if (m >= 70) countRet++;
-        if (m < 70 && m > 0) countCrit++;
+        
+        // HANYA HITUNG KRITIS JIKA DI BAWAH 60%
+        if (m < 60 && m > 0) countCrit++;
 
         const pVal = prevTw ? parseFloat(database[`${s.id}_${prevTw}`]?.mpi || 0) : 0;
         return { ...s, mpi: m, sine: sVal, growth: pVal > 0 ? m - pVal : 0 };
@@ -266,7 +267,6 @@ function updateAdminDashboards() {
         document.getElementById('award-rising').innerText = "-";
         document.getElementById('award-synergy').innerText = "-";
     } else {
-        // Logika Award tetap menggunakan data seluruh LPM (global) agar fair
         let globalStats = dataStaff.map(s => {
             const curr = database[`${s.id}_${tw}`] || { mpi: '0.00%', sine: 0 };
             const m = parseFloat(curr.mpi);
