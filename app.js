@@ -53,12 +53,10 @@ let database = {};
 function syncFromFirebase() {
     db.ref("kpi_v2026_final").on('value', (snapshot) => {
         const val = snapshot.val();
-        // Pastikan database tidak null agar perhitungan tidak error
         database = val || {}; 
         console.log("Data Realtime Database sinkron!");
         if (currentUser !== "") {
             renderTable();
-            // Trigger dashboard update jika admin
             if (currentUser === 'admin') updateAdminDashboards();
         }
     }, (error) => {
@@ -216,12 +214,18 @@ function getStatusClass(mpi) {
 
 function updateAdminDashboards() {
     const tw = document.getElementById('periode-tw').value;
+    const filter = document.getElementById('filter-divisi').value;
     const prevTw = tw === 'tw2' ? 'tw1' : (tw === 'tw3' ? 'tw2' : null);
     
-    // Inisialisasi ulang counter setiap kali fungsi dipanggil
+    // Tentukan list staff yang akan dihitung (sinkron dengan filter tabel)
+    let relevantStaff = dataStaff;
+    if (filter !== 'all') {
+        relevantStaff = dataStaff.filter(s => s.divisi === filter);
+    }
+    
     let sumMpi = 0, countRet = 0, countCrit = 0;
     
-    let stats = dataStaff.map(s => {
+    let stats = relevantStaff.map(s => {
         let m, sVal;
         if (tw === 'all') {
             m = (parseFloat(database[`${s.id}_tw1`]?.mpi || 0) + parseFloat(database[`${s.id}_tw2`]?.mpi || 0) + parseFloat(database[`${s.id}_tw3`]?.mpi || 0)) / 3;
@@ -234,16 +238,15 @@ function updateAdminDashboards() {
         
         sumMpi += m;
         if (m >= 70) countRet++;
-        
-        // KRITIS SINKRON: Hanya hitung jika m > 0 (data sudah masuk) dan m < 70
         if (m < 70 && m > 0) countCrit++;
 
         const pVal = prevTw ? parseFloat(database[`${s.id}_${prevTw}`]?.mpi || 0) : 0;
         return { ...s, mpi: m, sine: sVal, growth: pVal > 0 ? m - pVal : 0 };
     });
 
-    const avg = sumMpi / dataStaff.length;
-    const retPct = (countRet / dataStaff.length) * 100;
+    const totalRelevant = relevantStaff.length || 1; 
+    const avg = sumMpi / totalRelevant;
+    const retPct = (countRet / totalRelevant) * 100;
     
     document.getElementById('res-mpi-org').innerText = avg.toFixed(2) + "%";
     const stMpi = document.getElementById('status-mpi-org');
@@ -255,16 +258,22 @@ function updateAdminDashboards() {
     stRet.innerText = retPct >= 70 ? "✅ TERCAPAI" : "❌ GAGAL";
     stRet.className = "p-5 text-center text-[10px] w-28 " + (retPct >= 70 ? "tercapai" : "tidak-tercapai");
     
-    // Sinkronisasi output Staff Kritis ke elemen UI
     document.getElementById('res-kritis').innerText = countCrit;
 
-    // --- AWARDS LOGIC ---
     if (tw === 'all') {
         document.getElementById('award-supreme').innerText = "REKAP TAHUNAN";
         document.getElementById('award-best-div').innerText = "Mode Kumulatif Aktif";
         document.getElementById('award-rising').innerText = "-";
         document.getElementById('award-synergy').innerText = "-";
     } else {
+        // Logika Award tetap menggunakan data seluruh LPM (global) agar fair
+        let globalStats = dataStaff.map(s => {
+            const curr = database[`${s.id}_${tw}`] || { mpi: '0.00%', sine: 0 };
+            const m = parseFloat(curr.mpi);
+            const pVal = prevTw ? parseFloat(database[`${s.id}_${prevTw}`]?.mpi || 0) : 0;
+            return { ...s, mpi: m, sine: parseFloat(curr.sine) || 0, growth: pVal > 0 ? m - pVal : 0 };
+        });
+
         let blacklistSupreme = new Set();
         ['tw1', 'tw2', 'tw3'].forEach(p => {
             let pStats = dataStaff.map(s => ({
@@ -276,7 +285,7 @@ function updateAdminDashboards() {
         });
 
         let currentWinners = new Set();
-        const sup = [...stats].sort((a,b) => b.mpi !== a.mpi ? b.mpi - a.mpi : b.sine - a.sine)[0];
+        const sup = [...globalStats].sort((a,b) => b.mpi !== a.mpi ? b.mpi - a.mpi : b.sine - a.sine)[0];
         if(sup && sup.mpi > 0) { 
             document.getElementById('award-supreme').innerText = sup.nama; 
             currentWinners.add(sup.id); 
@@ -288,7 +297,7 @@ function updateAdminDashboards() {
 
         let bDivHtml = "";
         ['redaksi','jaker','psdm','medkraf'].forEach(d => {
-            const b = stats.filter(s => s.divisi === d && isEligible(s)).sort((a,b) => b.mpi - a.mpi)[0];
+            const b = globalStats.filter(s => s.divisi === d && isEligible(s)).sort((a,b) => b.mpi - a.mpi)[0];
             if(b && b.mpi > 0) { 
                 bDivHtml += `<div>${d.toUpperCase()}: <span class="text-indigo-600 dark:text-indigo-400">${b.nama}</span></div>`; 
                 currentWinners.add(b.id); 
@@ -298,18 +307,23 @@ function updateAdminDashboards() {
         });
         document.getElementById('award-best-div').innerHTML = bDivHtml;
 
-        const ris = stats.filter(s => isEligible(s)).sort((a,b) => b.growth - a.growth)[0];
+        const ris = globalStats.filter(s => isEligible(s)).sort((a,b) => b.growth - a.growth)[0];
         document.getElementById('award-rising').innerText = (prevTw && ris && ris.growth > 0) ? `${ris.nama} (+${ris.growth.toFixed(1)}%)` : "-";
 
-        const syn = stats.filter(s => isEligible(s)).sort((a,b) => b.sine - a.sine)[0];
+        const syn = globalStats.filter(s => isEligible(s)).sort((a,b) => b.sine - a.sine)[0];
         document.getElementById('award-synergy').innerText = (syn && syn.sine > 0) ? syn.nama : "-";
     }
 
     const rBody = document.getElementById('divisi-ranking-body');
     rBody.innerHTML = '';
     ['redaksi','jaker','psdm','medkraf'].map(d => {
-        const m = stats.filter(s => s.divisi === d);
-        const score = m.length > 0 ? m.reduce((a,b) => a + b.mpi, 0) / m.length : 0;
+        const m = dataStaff.filter(s => s.divisi === d).map(s => {
+             const curr = (tw === 'all') 
+                ? (parseFloat(database[`${s.id}_tw1`]?.mpi || 0) + parseFloat(database[`${s.id}_tw2`]?.mpi || 0) + parseFloat(database[`${s.id}_tw3`]?.mpi || 0)) / 3
+                : parseFloat(database[`${s.id}_${tw}`]?.mpi || 0);
+             return curr;
+        });
+        const score = m.length > 0 ? m.reduce((a,b) => a + b, 0) / m.length : 0;
         return { d, score };
     }).sort((a,b) => b.score - a.score).forEach((r, i) => {
         let col = r.score >= 70 ? "text-emerald-500" : (r.score >= 50 ? "text-amber-500" : "text-rose-500");
