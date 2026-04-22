@@ -50,7 +50,6 @@ let currentUser = "";
 let draftData = {}; 
 let database = {}; 
 
-// --- REALTIME DATABASE: AMBIL DATA OTOMATIS (LIVE SYNC) ---
 function syncFromFirebase() {
     db.ref("kpi_v2026_final").on('value', (snapshot) => {
         const val = snapshot.val();
@@ -65,7 +64,6 @@ function syncFromFirebase() {
 }
 syncFromFirebase();
 
-// VARIABEL SORT (none, desc, asc)
 let currentSort = "none";
 
 function toggleDarkMode() {
@@ -127,21 +125,44 @@ function renderTable() {
 
     if (currentSort !== "none") {
         list = [...list].sort((a, b) => {
-            const mpiA = parseFloat(database[`${a.id}_${tw}`]?.mpi || 0);
-            const mpiB = parseFloat(database[`${b.id}_${tw}`]?.mpi || 0);
+            let mpiA, mpiB;
+            if (tw === 'all') {
+                mpiA = (parseFloat(database[`${a.id}_tw1`]?.mpi || 0) + parseFloat(database[`${a.id}_tw2`]?.mpi || 0) + parseFloat(database[`${a.id}_tw3`]?.mpi || 0)) / 3;
+                mpiB = (parseFloat(database[`${b.id}_tw1`]?.mpi || 0) + parseFloat(database[`${b.id}_tw2`]?.mpi || 0) + parseFloat(database[`${b.id}_tw3`]?.mpi || 0)) / 3;
+            } else {
+                mpiA = parseFloat(database[`${a.id}_${tw}`]?.mpi || 0);
+                mpiB = parseFloat(database[`${b.id}_${tw}`]?.mpi || 0);
+            }
             return currentSort === "desc" ? mpiB - mpiA : mpiA - mpiB;
         });
     }
 
     list.forEach(s => {
-        const d = database[`${s.id}_${tw}`] || { kuan: '', kual: '', sine: '', mpi: '0.00%', status: 'KRITIS' };
+        let d;
+        if (tw === 'all') {
+            const t1 = database[`${s.id}_tw1`] || { kuan:0, kual:0, sine:0, mpi:0 };
+            const t2 = database[`${s.id}_tw2`] || { kuan:0, kual:0, sine:0, mpi:0 };
+            const t3 = database[`${s.id}_tw3`] || { kuan:0, kual:0, sine:0, mpi:0 };
+            
+            const avgMpi = (parseFloat(t1.mpi) + parseFloat(t2.mpi) + parseFloat(t3.mpi)) / 3;
+            d = {
+                kuan: ((parseFloat(t1.kuan)||0) + (parseFloat(t2.kuan)||0) + (parseFloat(t3.kuan)||0) / 3).toFixed(1),
+                kual: ((parseFloat(t1.kual)||0) + (parseFloat(t2.kual)||0) + (parseFloat(t3.kual)||0) / 3).toFixed(1),
+                sine: ((parseFloat(t1.sine)||0) + (parseFloat(t2.sine)||0) + (parseFloat(t3.sine)||0) / 3).toFixed(1),
+                mpi: avgMpi.toFixed(2) + "%",
+                status: avgMpi >= 85 ? "EXCELLENT" : (avgMpi >= 70 ? "BAGUS" : (avgMpi >= 60 ? "NORMAL" : "KRITIS"))
+            };
+        } else {
+            d = database[`${s.id}_${tw}`] || { kuan: '', kual: '', sine: '', mpi: '0.00%', status: 'KRITIS' };
+        }
+
         tbody.innerHTML += `
             <tr class="dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors text-center">
                 <td class="p-6 font-bold text-slate-700 dark:text-slate-200 text-left">${s.nama}</td>
                 <td class="p-6 text-[10px] text-slate-400 font-black uppercase tracking-widest text-left">${s.divisi}</td>
-                <td class="p-2"><input type="number" id="kuan-${s.id}" value="${d.kuan}" oninput="limit(this, 60); calc(${s.id})" ${isAdmin ? 'disabled' : ''}></td>
-                <td class="p-2"><input type="number" id="kual-${s.id}" value="${d.kual}" oninput="limit(this, 15); calc(${s.id})" ${isAdmin ? 'disabled' : ''}></td>
-                <td class="p-2"><input type="number" id="sine-${s.id}" value="${d.sine}" oninput="limit(this, 15); calc(${s.id})" ${isAdmin ? 'disabled' : ''}></td>
+                <td class="p-2"><input type="number" id="kuan-${s.id}" value="${d.kuan}" oninput="limit(this, 60); calc(${s.id})" ${(isAdmin || tw === 'all') ? 'disabled' : ''}></td>
+                <td class="p-2"><input type="number" id="kual-${s.id}" value="${d.kual}" oninput="limit(this, 15); calc(${s.id})" ${(isAdmin || tw === 'all') ? 'disabled' : ''}></td>
+                <td class="p-2"><input type="number" id="sine-${s.id}" value="${d.sine}" oninput="limit(this, 15); calc(${s.id})" ${(isAdmin || tw === 'all') ? 'disabled' : ''}></td>
                 <td class="p-4 text-indigo-600 dark:text-indigo-400 font-black text-xl" id="mpi-${s.id}">${d.mpi}</td>
                 <td class="p-4 text-[10px] uppercase font-black ${getStatusClass(d.mpi)}" id="status-${s.id}">${d.status}</td>
             </tr>
@@ -194,14 +215,14 @@ function updateAdminDashboards() {
     const tw = document.getElementById('periode-tw').value;
     const prevTw = tw === 'tw2' ? 'tw1' : (tw === 'tw3' ? 'tw2' : null);
     
-    // --- LOGIKA EXCLUSIVE SUPREME (MENCEGAH DOPEL PENGHARGAAN) ---
     let blacklistSupreme = new Set();
     ['tw1', 'tw2', 'tw3'].forEach(p => {
         let periodStats = dataStaff.map(s => {
             const m = parseFloat(database[`${s.id}_${p}`]?.mpi || 0);
-            return { id: s.id, mpi: m };
+            const sn = parseFloat(database[`${s.id}_${p}`]?.sine || 0);
+            return { id: s.id, mpi: m, sine: sn };
         });
-        const supremeInPeriod = periodStats.sort((a, b) => b.mpi - a.mpi)[0];
+        const supremeInPeriod = periodStats.sort((a, b) => b.mpi !== a.mpi ? b.mpi - a.mpi : b.sine - a.sine)[0];
         if (supremeInPeriod && supremeInPeriod.mpi > 0) {
             blacklistSupreme.add(supremeInPeriod.id);
         }
@@ -209,13 +230,21 @@ function updateAdminDashboards() {
 
     let sumMpi = 0, countRet = 0, countCrit = 0;
     let stats = dataStaff.map(s => {
-        const curr = database[`${s.id}_${tw}`] || { mpi: '0.00%', sine: 0 };
-        const m = parseFloat(curr.mpi);
+        let m, sVal;
+        if (tw === 'all') {
+            m = (parseFloat(database[`${s.id}_tw1`]?.mpi || 0) + parseFloat(database[`${s.id}_tw2`]?.mpi || 0) + parseFloat(database[`${s.id}_tw3`]?.mpi || 0)) / 3;
+            sVal = (parseFloat(database[`${s.id}_tw1`]?.sine || 0) + parseFloat(database[`${s.id}_tw2`]?.sine || 0) + parseFloat(database[`${s.id}_tw3`]?.sine || 0)) / 3;
+        } else {
+            const curr = database[`${s.id}_${tw}`] || { mpi: '0.00%', sine: 0 };
+            m = parseFloat(curr.mpi);
+            sVal = parseFloat(curr.sine) || 0;
+        }
+        
         sumMpi += m;
         if (m >= 70) countRet++;
         if (m < 70 && m > 0) countCrit++;
         const pVal = prevTw ? parseFloat(database[`${s.id}_${prevTw}`]?.mpi || 0) : 0;
-        return { ...s, mpi: m, sine: parseFloat(curr.sine) || 0, growth: pVal > 0 ? m - pVal : 0 };
+        return { ...s, mpi: m, sine: sVal, growth: pVal > 0 ? m - pVal : 0 };
     });
 
     const avg = sumMpi / dataStaff.length;
@@ -230,49 +259,47 @@ function updateAdminDashboards() {
     stRet.className = "p-5 text-center text-[10px] w-28 " + (retPct >= 70 ? "tercapai" : "tidak-tercapai");
     document.getElementById('res-kritis').innerText = countCrit;
 
-    let currentWinners = new Set();
-    const isEligible = (s) => !currentWinners.has(s.id) && !blacklistSupreme.has(s.id);
-
-    // 1. Supreme Achiever (Bisa menang berkali-kali)
-    const sup = stats.sort((a,b) => b.mpi - a.mpi)[0];
-    if(sup && sup.mpi > 0) { 
-        document.getElementById('award-supreme').innerText = sup.nama; 
-        currentWinners.add(sup.id); 
-    } else {
-        document.getElementById('award-supreme').innerText = "-";
-    }
-
-    // 2. Best of Divisi (Hanya untuk non-Supreme & belum menang di TW ini)
-    let bDivHtml = "";
-    ['redaksi','jaker','psdm','medkraf'].forEach(d => {
-        const b = stats.filter(s => s.divisi === d && isEligible(s)).sort((a,b) => b.mpi - a.mpi)[0];
-        if(b && b.mpi > 0) { 
-            bDivHtml += `<div>${d.toUpperCase()}: <span class="text-indigo-600 dark:text-indigo-400">${b.nama}</span></div>`; 
-            currentWinners.add(b.id); 
-        } else {
-            bDivHtml += `<div class="text-slate-300 uppercase">${d}: -</div>`;
-        }
-    });
-    document.getElementById('award-best-div').innerHTML = bDivHtml;
-
-    // 3. The Rising Star (Hanya untuk non-Supreme & belum menang di TW ini)
-    const ris = stats.filter(s => isEligible(s)).sort((a,b) => b.growth - a.growth)[0];
-    if(prevTw && ris && ris.growth > 0) {
-        document.getElementById('award-rising').innerText = `${ris.nama} (+${ris.growth.toFixed(1)}%)`;
-        currentWinners.add(ris.id);
-    } else {
-        document.getElementById('award-rising').innerText = prevTw ? "-" : "N/A (TW1)";
-    }
-
-    // 4. Synergy & Harmony (Hanya untuk non-Supreme & belum menang di TW ini)
-    const syn = stats.filter(s => isEligible(s)).sort((a,b) => b.sine - a.sine)[0];
-    if(syn && syn.sine > 0) {
-        document.getElementById('award-synergy').innerText = syn.nama;
-    } else {
+    if (tw === 'all') {
+        document.getElementById('award-supreme').innerText = "REKAP TAHUNAN";
+        document.getElementById('award-best-div').innerText = "Mode Kumulatif Aktif";
+        document.getElementById('award-rising').innerText = "-";
         document.getElementById('award-synergy').innerText = "-";
+    } else {
+        let currentWinners = new Set();
+        const isEligible = (s) => !currentWinners.has(s.id) && !blacklistSupreme.has(s.id);
+
+        const sup = stats.sort((a,b) => b.mpi !== a.mpi ? b.mpi - a.mpi : b.sine - a.sine)[0];
+        if(sup && sup.mpi > 0) { 
+            document.getElementById('award-supreme').innerText = sup.nama; 
+            currentWinners.add(sup.id); 
+        } else {
+            document.getElementById('award-supreme').innerText = "-";
+        }
+
+        let bDivHtml = "";
+        ['redaksi','jaker','psdm','medkraf'].forEach(d => {
+            const b = stats.filter(s => s.divisi === d && isEligible(s)).sort((a,b) => b.mpi - a.mpi)[0];
+            if(b && b.mpi > 0) { 
+                bDivHtml += `<div>${d.toUpperCase()}: <span class="text-indigo-600 dark:text-indigo-400">${b.nama}</span></div>`; 
+                currentWinners.add(b.id); 
+            } else {
+                bDivHtml += `<div class="text-slate-300 uppercase">${d}: -</div>`;
+            }
+        });
+        document.getElementById('award-best-div').innerHTML = bDivHtml;
+
+        const ris = stats.filter(s => isEligible(s)).sort((a,b) => b.growth - a.growth)[0];
+        if(prevTw && ris && ris.growth > 0) {
+            document.getElementById('award-rising').innerText = `${ris.nama} (+${ris.growth.toFixed(1)}%)`;
+            currentWinners.add(ris.id);
+        } else {
+            document.getElementById('award-rising').innerText = prevTw ? "-" : "N/A (TW1)";
+        }
+
+        const syn = stats.filter(s => isEligible(s)).sort((a,b) => b.sine - a.sine)[0];
+        document.getElementById('award-synergy').innerText = (syn && syn.sine > 0) ? syn.nama : "-";
     }
 
-    // --- Ranking Divisi ---
     const rBody = document.getElementById('divisi-ranking-body');
     rBody.innerHTML = '';
     ['redaksi','jaker','psdm','medkraf'].map(d => {
