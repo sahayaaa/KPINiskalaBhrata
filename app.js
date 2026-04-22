@@ -52,7 +52,6 @@ let database = {};
 
 // --- REALTIME DATABASE: AMBIL DATA OTOMATIS (LIVE SYNC) ---
 function syncFromFirebase() {
-    // Menggunakan .on('value') agar jika admin ubah data, dashboard staff ikut update otomatis
     db.ref("kpi_v2026_final").on('value', (snapshot) => {
         const val = snapshot.val();
         if (val) {
@@ -169,11 +168,8 @@ function calc(id) {
     draftData[`${id}_${tw}`] = { kuan, kual, sine, mpi: mpiStr, status };
 }
 
-// --- REALTIME DATABASE: SETOR DATA ---
 function simpanPermanen() {
     database = { ...database, ...draftData };
-    
-    // Simpan ke Realtime Database menggunakan .set()
     db.ref("kpi_v2026_final").set(database)
     .then(() => {
         alert("✅ Data Berhasil Disetorkan ke Realtime Database!");
@@ -198,6 +194,19 @@ function updateAdminDashboards() {
     const tw = document.getElementById('periode-tw').value;
     const prevTw = tw === 'tw2' ? 'tw1' : (tw === 'tw3' ? 'tw2' : null);
     
+    // --- LOGIKA EXCLUSIVE SUPREME (MENCEGAH DOPEL PENGHARGAAN) ---
+    let blacklistSupreme = new Set();
+    ['tw1', 'tw2', 'tw3'].forEach(p => {
+        let periodStats = dataStaff.map(s => {
+            const m = parseFloat(database[`${s.id}_${p}`]?.mpi || 0);
+            return { id: s.id, mpi: m };
+        });
+        const supremeInPeriod = periodStats.sort((a, b) => b.mpi - a.mpi)[0];
+        if (supremeInPeriod && supremeInPeriod.mpi > 0) {
+            blacklistSupreme.add(supremeInPeriod.id);
+        }
+    });
+
     let sumMpi = 0, countRet = 0, countCrit = 0;
     let stats = dataStaff.map(s => {
         const curr = database[`${s.id}_${tw}`] || { mpi: '0.00%', sine: 0 };
@@ -205,7 +214,6 @@ function updateAdminDashboards() {
         sumMpi += m;
         if (m >= 70) countRet++;
         if (m < 70 && m > 0) countCrit++;
-        
         const pVal = prevTw ? parseFloat(database[`${s.id}_${prevTw}`]?.mpi || 0) : 0;
         return { ...s, mpi: m, sine: parseFloat(curr.sine) || 0, growth: pVal > 0 ? m - pVal : 0 };
     });
@@ -213,46 +221,58 @@ function updateAdminDashboards() {
     const avg = sumMpi / dataStaff.length;
     const retPct = (countRet / dataStaff.length) * 100;
     document.getElementById('res-mpi-org').innerText = avg.toFixed(2) + "%";
-    
     const stMpi = document.getElementById('status-mpi-org');
     stMpi.innerText = avg >= 70 ? "✅ TERCAPAI" : "❌ GAGAL";
     stMpi.className = "p-5 text-center text-[10px] w-28 " + (avg >= 70 ? "tercapai" : "tidak-tercapai");
-
     document.getElementById('res-retensi').innerText = retPct.toFixed(2) + "%";
-    
     const stRet = document.getElementById('status-retensi');
     stRet.innerText = retPct >= 70 ? "✅ TERCAPAI" : "❌ GAGAL";
     stRet.className = "p-5 text-center text-[10px] w-28 " + (retPct >= 70 ? "tercapai" : "tidak-tercapai");
-
     document.getElementById('res-kritis').innerText = countCrit;
 
-    let winners = new Set();
-    const getBest = (arr, key) => arr.filter(s => !winners.has(s.id)).sort((a,b) => b[key] - a[key])[0];
+    let currentWinners = new Set();
+    const isEligible = (s) => !currentWinners.has(s.id) && !blacklistSupreme.has(s.id);
 
-    const sup = getBest(stats, 'mpi');
-    if(sup && sup.mpi > 0) { document.getElementById('award-supreme').innerText = sup.nama; winners.add(sup.id); }
+    // 1. Supreme Achiever (Bisa menang berkali-kali)
+    const sup = stats.sort((a,b) => b.mpi - a.mpi)[0];
+    if(sup && sup.mpi > 0) { 
+        document.getElementById('award-supreme').innerText = sup.nama; 
+        currentWinners.add(sup.id); 
+    } else {
+        document.getElementById('award-supreme').innerText = "-";
+    }
 
+    // 2. Best of Divisi (Hanya untuk non-Supreme & belum menang di TW ini)
     let bDivHtml = "";
     ['redaksi','jaker','psdm','medkraf'].forEach(d => {
-        const b = stats.filter(s => s.divisi === d && !winners.has(s.id)).sort((a,b) => b.mpi - a.mpi)[0];
-        if(b && b.mpi > 0) { bDivHtml += `<div>${d.toUpperCase()}: <span class="text-indigo-600 dark:text-indigo-400">${b.nama}</span></div>`; winners.add(b.id); }
-        else bDivHtml += `<div class="text-slate-300 uppercase">${d}: -</div>`;
+        const b = stats.filter(s => s.divisi === d && isEligible(s)).sort((a,b) => b.mpi - a.mpi)[0];
+        if(b && b.mpi > 0) { 
+            bDivHtml += `<div>${d.toUpperCase()}: <span class="text-indigo-600 dark:text-indigo-400">${b.nama}</span></div>`; 
+            currentWinners.add(b.id); 
+        } else {
+            bDivHtml += `<div class="text-slate-300 uppercase">${d}: -</div>`;
+        }
     });
     document.getElementById('award-best-div').innerHTML = bDivHtml;
 
-    const ris = getBest(stats, 'growth');
+    // 3. The Rising Star (Hanya untuk non-Supreme & belum menang di TW ini)
+    const ris = stats.filter(s => isEligible(s)).sort((a,b) => b.growth - a.growth)[0];
     if(prevTw && ris && ris.growth > 0) {
         document.getElementById('award-rising').innerText = `${ris.nama} (+${ris.growth.toFixed(1)}%)`;
-        winners.add(ris.id);
-    } else document.getElementById('award-rising').innerText = prevTw ? "-" : "N/A (TW1)";
+        currentWinners.add(ris.id);
+    } else {
+        document.getElementById('award-rising').innerText = prevTw ? "-" : "N/A (TW1)";
+    }
 
-    const statsForSynergy = dataStaff.map(s => {
-        const curr = database[`${s.id}_${tw}`] || { sine: 0 };
-        return { nama: s.nama, sine: parseFloat(curr.sine) || 0 };
-    });
-    const syn = statsForSynergy.sort((a, b) => b.sine - a.sine)[0];
-    document.getElementById('award-synergy').innerText = (syn && syn.sine > 0) ? syn.nama : "-";
+    // 4. Synergy & Harmony (Hanya untuk non-Supreme & belum menang di TW ini)
+    const syn = stats.filter(s => isEligible(s)).sort((a,b) => b.sine - a.sine)[0];
+    if(syn && syn.sine > 0) {
+        document.getElementById('award-synergy').innerText = syn.nama;
+    } else {
+        document.getElementById('award-synergy').innerText = "-";
+    }
 
+    // --- Ranking Divisi ---
     const rBody = document.getElementById('divisi-ranking-body');
     rBody.innerHTML = '';
     ['redaksi','jaker','psdm','medkraf'].map(d => {
