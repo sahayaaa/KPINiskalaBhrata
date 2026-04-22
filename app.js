@@ -53,10 +53,13 @@ let database = {};
 function syncFromFirebase() {
     db.ref("kpi_v2026_final").on('value', (snapshot) => {
         const val = snapshot.val();
-        if (val) {
-            database = val;
-            console.log("Data Realtime Database sinkron!");
-            if (currentUser !== "") renderTable();
+        // Pastikan database tidak null agar perhitungan tidak error
+        database = val || {}; 
+        console.log("Data Realtime Database sinkron!");
+        if (currentUser !== "") {
+            renderTable();
+            // Trigger dashboard update jika admin
+            if (currentUser === 'admin') updateAdminDashboards();
         }
     }, (error) => {
         console.error("Error sinkronisasi:", error);
@@ -146,9 +149,9 @@ function renderTable() {
             
             const avgMpi = (parseFloat(t1.mpi) + parseFloat(t2.mpi) + parseFloat(t3.mpi)) / 3;
             d = {
-                kuan: ((parseFloat(t1.kuan)||0) + (parseFloat(t2.kuan)||0) + (parseFloat(t3.kuan)||0) / 3).toFixed(1),
-                kual: ((parseFloat(t1.kual)||0) + (parseFloat(t2.kual)||0) + (parseFloat(t3.kual)||0) / 3).toFixed(1),
-                sine: ((parseFloat(t1.sine)||0) + (parseFloat(t2.sine)||0) + (parseFloat(t3.sine)||0) / 3).toFixed(1),
+                kuan: (( (parseFloat(t1.kuan)||0) + (parseFloat(t2.kuan)||0) + (parseFloat(t3.kuan)||0) ) / 3).toFixed(1),
+                kual: (( (parseFloat(t1.kual)||0) + (parseFloat(t2.kual)||0) + (parseFloat(t3.kual)||0) ) / 3).toFixed(1),
+                sine: (( (parseFloat(t1.sine)||0) + (parseFloat(t2.sine)||0) + (parseFloat(t3.sine)||0) ) / 3).toFixed(1),
                 mpi: avgMpi.toFixed(2) + "%",
                 status: avgMpi >= 85 ? "EXCELLENT" : (avgMpi >= 70 ? "BAGUS" : (avgMpi >= 60 ? "NORMAL" : "KRITIS"))
             };
@@ -215,20 +218,9 @@ function updateAdminDashboards() {
     const tw = document.getElementById('periode-tw').value;
     const prevTw = tw === 'tw2' ? 'tw1' : (tw === 'tw3' ? 'tw2' : null);
     
-    let blacklistSupreme = new Set();
-    ['tw1', 'tw2', 'tw3'].forEach(p => {
-        let periodStats = dataStaff.map(s => {
-            const m = parseFloat(database[`${s.id}_${p}`]?.mpi || 0);
-            const sn = parseFloat(database[`${s.id}_${p}`]?.sine || 0);
-            return { id: s.id, mpi: m, sine: sn };
-        });
-        const supremeInPeriod = periodStats.sort((a, b) => b.mpi !== a.mpi ? b.mpi - a.mpi : b.sine - a.sine)[0];
-        if (supremeInPeriod && supremeInPeriod.mpi > 0) {
-            blacklistSupreme.add(supremeInPeriod.id);
-        }
-    });
-
+    // Inisialisasi ulang counter setiap kali fungsi dipanggil
     let sumMpi = 0, countRet = 0, countCrit = 0;
+    
     let stats = dataStaff.map(s => {
         let m, sVal;
         if (tw === 'all') {
@@ -242,39 +234,57 @@ function updateAdminDashboards() {
         
         sumMpi += m;
         if (m >= 70) countRet++;
+        
+        // KRITIS SINKRON: Hanya hitung jika m > 0 (data sudah masuk) dan m < 70
         if (m < 70 && m > 0) countCrit++;
+
         const pVal = prevTw ? parseFloat(database[`${s.id}_${prevTw}`]?.mpi || 0) : 0;
         return { ...s, mpi: m, sine: sVal, growth: pVal > 0 ? m - pVal : 0 };
     });
 
     const avg = sumMpi / dataStaff.length;
     const retPct = (countRet / dataStaff.length) * 100;
+    
     document.getElementById('res-mpi-org').innerText = avg.toFixed(2) + "%";
     const stMpi = document.getElementById('status-mpi-org');
     stMpi.innerText = avg >= 70 ? "✅ TERCAPAI" : "❌ GAGAL";
     stMpi.className = "p-5 text-center text-[10px] w-28 " + (avg >= 70 ? "tercapai" : "tidak-tercapai");
+    
     document.getElementById('res-retensi').innerText = retPct.toFixed(2) + "%";
     const stRet = document.getElementById('status-retensi');
     stRet.innerText = retPct >= 70 ? "✅ TERCAPAI" : "❌ GAGAL";
     stRet.className = "p-5 text-center text-[10px] w-28 " + (retPct >= 70 ? "tercapai" : "tidak-tercapai");
+    
+    // Sinkronisasi output Staff Kritis ke elemen UI
     document.getElementById('res-kritis').innerText = countCrit;
 
+    // --- AWARDS LOGIC ---
     if (tw === 'all') {
         document.getElementById('award-supreme').innerText = "REKAP TAHUNAN";
         document.getElementById('award-best-div').innerText = "Mode Kumulatif Aktif";
         document.getElementById('award-rising').innerText = "-";
         document.getElementById('award-synergy').innerText = "-";
     } else {
-        let currentWinners = new Set();
-        const isEligible = (s) => !currentWinners.has(s.id) && !blacklistSupreme.has(s.id);
+        let blacklistSupreme = new Set();
+        ['tw1', 'tw2', 'tw3'].forEach(p => {
+            let pStats = dataStaff.map(s => ({
+                id: s.id, 
+                mpi: parseFloat(database[`${s.id}_${p}`]?.mpi || 0),
+                sine: parseFloat(database[`${s.id}_${p}`]?.sine || 0)
+            })).sort((a,b) => b.mpi !== a.mpi ? b.mpi - a.mpi : b.sine - a.sine);
+            if(pStats[0] && pStats[0].mpi > 0) blacklistSupreme.add(pStats[0].id);
+        });
 
-        const sup = stats.sort((a,b) => b.mpi !== a.mpi ? b.mpi - a.mpi : b.sine - a.sine)[0];
+        let currentWinners = new Set();
+        const sup = [...stats].sort((a,b) => b.mpi !== a.mpi ? b.mpi - a.mpi : b.sine - a.sine)[0];
         if(sup && sup.mpi > 0) { 
             document.getElementById('award-supreme').innerText = sup.nama; 
             currentWinners.add(sup.id); 
         } else {
             document.getElementById('award-supreme').innerText = "-";
         }
+
+        const isEligible = (s) => !currentWinners.has(s.id) && !blacklistSupreme.has(s.id);
 
         let bDivHtml = "";
         ['redaksi','jaker','psdm','medkraf'].forEach(d => {
@@ -289,12 +299,7 @@ function updateAdminDashboards() {
         document.getElementById('award-best-div').innerHTML = bDivHtml;
 
         const ris = stats.filter(s => isEligible(s)).sort((a,b) => b.growth - a.growth)[0];
-        if(prevTw && ris && ris.growth > 0) {
-            document.getElementById('award-rising').innerText = `${ris.nama} (+${ris.growth.toFixed(1)}%)`;
-            currentWinners.add(ris.id);
-        } else {
-            document.getElementById('award-rising').innerText = prevTw ? "-" : "N/A (TW1)";
-        }
+        document.getElementById('award-rising').innerText = (prevTw && ris && ris.growth > 0) ? `${ris.nama} (+${ris.growth.toFixed(1)}%)` : "-";
 
         const syn = stats.filter(s => isEligible(s)).sort((a,b) => b.sine - a.sine)[0];
         document.getElementById('award-synergy').innerText = (syn && syn.sine > 0) ? syn.nama : "-";
