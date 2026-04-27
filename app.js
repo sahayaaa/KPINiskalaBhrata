@@ -1,5 +1,4 @@
 const dataStaff = [
-    // REDAKSI
     { id: 1, nama: "Faiz", divisi: "redaksi" },
     { id: 2, nama: "Nada", divisi: "redaksi" },
     { id: 3, nama: "Dania", divisi: "redaksi" },
@@ -8,8 +7,6 @@ const dataStaff = [
     { id: 6, nama: "Nayla Enzethiana", divisi: "redaksi" },
     { id: 7, nama: "Shenny Nurhidayah", divisi: "redaksi" },
     { id: 8, nama: "Audrina Rustari", divisi: "redaksi" },
-
-    // JAKER
     { id: 9, nama: "Bintang", divisi: "jaker" },
     { id: 10, nama: "Salwa", divisi: "jaker" },
     { id: 11, nama: "Indy", divisi: "jaker" },
@@ -17,8 +14,6 @@ const dataStaff = [
     { id: 13, nama: "Yaumiedka Vitra", divisi: "jaker" },
     { id: 14, nama: "Anisa Nuraini", divisi: "jaker" },
     { id: 15, nama: "Siti Zahra", divisi: "jaker" },
-
-    // PSDM
     { id: 16, nama: "Lili", divisi: "psdm" },
     { id: 17, nama: "Rifa", divisi: "psdm" },
     { id: 18, nama: "Aga", divisi: "psdm" },
@@ -27,8 +22,6 @@ const dataStaff = [
     { id: 21, nama: "Rizal Tsaniya", divisi: "psdm" },
     { id: 22, nama: "Arfita Zahra", divisi: "psdm" },
     { id: 23, nama: "Yaffa Cantika Putri", divisi: "psdm" },
-
-    // MEDKRAF
     { id: 24, nama: "Irfan", divisi: "medkraf" },
     { id: 25, nama: "Putri", divisi: "medkraf" },
     { id: 26, nama: "Amalya Azahra", divisi: "medkraf" },
@@ -49,18 +42,16 @@ const userAccounts = {
 let currentUser = "";
 let draftData = {}; 
 let database = {}; 
+let isRankingUnlocked = false; // Flag proteksi ranking
 
 function syncFromFirebase() {
     db.ref("kpi_v2026_final").on('value', (snapshot) => {
         const val = snapshot.val();
         database = val || {}; 
-        console.log("Data Realtime Database sinkron!");
         if (currentUser !== "") {
             renderTable();
             if (currentUser === 'admin') updateAdminDashboards();
         }
-    }, (error) => {
-        console.error("Error sinkronisasi:", error);
     });
 }
 syncFromFirebase();
@@ -96,6 +87,27 @@ function handleLogin() {
         renderTable();
     } else {
         alert("Username atau Password salah");
+    }
+}
+
+function unlockRanking() {
+    if (isRankingUnlocked) {
+        isRankingUnlocked = false;
+        document.getElementById('divisi-ranking-body').classList.add('blur-[6px]');
+        document.getElementById('ranking-overlay').classList.remove('hidden');
+        document.getElementById('btn-lock-ranking').innerText = "🔓 BUKA AKSES";
+        renderTable(); 
+        return;
+    }
+    const pass = prompt("Masukkan Password Ring 1:");
+    if (pass === "niskala2026") {
+        isRankingUnlocked = true;
+        document.getElementById('divisi-ranking-body').classList.remove('blur-[6px]');
+        document.getElementById('ranking-overlay').classList.add('hidden');
+        document.getElementById('btn-lock-ranking').innerText = "🔒 KUNCI DATA";
+        renderTable();
+    } else if (pass !== null) {
+        alert("Password Salah!");
     }
 }
 
@@ -144,7 +156,6 @@ function renderTable() {
             const t1 = database[`${s.id}_tw1`] || { kuan:0, kual:0, sine:0, mpi:0 };
             const t2 = database[`${s.id}_tw2`] || { kuan:0, kual:0, sine:0, mpi:0 };
             const t3 = database[`${s.id}_tw3`] || { kuan:0, kual:0, sine:0, mpi:0 };
-            
             const avgMpi = (parseFloat(t1.mpi) + parseFloat(t2.mpi) + parseFloat(t3.mpi)) / 3;
             d = {
                 kuan: (( (parseFloat(t1.kuan)||0) + (parseFloat(t2.kuan)||0) + (parseFloat(t3.kuan)||0) ) / 3).toFixed(1),
@@ -199,8 +210,7 @@ function simpanPermanen() {
         if (currentUser === 'admin') renderTable();
     })
     .catch((error) => {
-        console.error("Gagal simpan:", error);
-        alert("Gagal simpan. Cek koneksi atau Rules Database.");
+        alert("Gagal simpan.");
     });
 }
 
@@ -218,9 +228,7 @@ function updateAdminDashboards() {
     const prevTw = tw === 'tw2' ? 'tw1' : (tw === 'tw3' ? 'tw2' : null);
     
     let relevantStaff = dataStaff;
-    if (filter !== 'all') {
-        relevantStaff = dataStaff.filter(s => s.divisi === filter);
-    }
+    if (filter !== 'all') relevantStaff = dataStaff.filter(s => s.divisi === filter);
     
     let sumMpi = 0, countRet = 0, countCrit = 0;
     
@@ -234,13 +242,9 @@ function updateAdminDashboards() {
             m = parseFloat(curr.mpi);
             sVal = parseFloat(curr.sine) || 0;
         }
-        
         sumMpi += m;
         if (m >= 70) countRet++;
-        
-        // HANYA HITUNG KRITIS JIKA DI BAWAH 60%
         if (m < 60 && m > 0) countCrit++;
-
         const pVal = prevTw ? parseFloat(database[`${s.id}_${prevTw}`]?.mpi || 0) : 0;
         return { ...s, mpi: m, sine: sVal, growth: pVal > 0 ? m - pVal : 0 };
     });
@@ -261,6 +265,7 @@ function updateAdminDashboards() {
     
     document.getElementById('res-kritis').innerText = countCrit;
 
+    // AWARDS AREA
     if (tw === 'all') {
         document.getElementById('award-supreme').innerText = "REKAP TAHUNAN";
         document.getElementById('award-best-div').innerText = "Mode Kumulatif Aktif";
@@ -274,46 +279,25 @@ function updateAdminDashboards() {
             return { ...s, mpi: m, sine: parseFloat(curr.sine) || 0, growth: pVal > 0 ? m - pVal : 0 };
         });
 
-        let blacklistSupreme = new Set();
-        ['tw1', 'tw2', 'tw3'].forEach(p => {
-            let pStats = dataStaff.map(s => ({
-                id: s.id, 
-                mpi: parseFloat(database[`${s.id}_${p}`]?.mpi || 0),
-                sine: parseFloat(database[`${s.id}_${p}`]?.sine || 0)
-            })).sort((a,b) => b.mpi !== a.mpi ? b.mpi - a.mpi : b.sine - a.sine);
-            if(pStats[0] && pStats[0].mpi > 0) blacklistSupreme.add(pStats[0].id);
-        });
-
-        let currentWinners = new Set();
         const sup = [...globalStats].sort((a,b) => b.mpi !== a.mpi ? b.mpi - a.mpi : b.sine - a.sine)[0];
-        if(sup && sup.mpi > 0) { 
-            document.getElementById('award-supreme').innerText = sup.nama; 
-            currentWinners.add(sup.id); 
-        } else {
-            document.getElementById('award-supreme').innerText = "-";
-        }
-
-        const isEligible = (s) => !currentWinners.has(s.id) && !blacklistSupreme.has(s.id);
+        document.getElementById('award-supreme').innerText = (sup && sup.mpi > 0) ? sup.nama : "-";
 
         let bDivHtml = "";
         ['redaksi','jaker','psdm','medkraf'].forEach(d => {
-            const b = globalStats.filter(s => s.divisi === d && isEligible(s)).sort((a,b) => b.mpi - a.mpi)[0];
-            if(b && b.mpi > 0) { 
-                bDivHtml += `<div>${d.toUpperCase()}: <span class="text-indigo-600 dark:text-indigo-400">${b.nama}</span></div>`; 
-                currentWinners.add(b.id); 
-            } else {
-                bDivHtml += `<div class="text-slate-300 uppercase">${d}: -</div>`;
-            }
+            const b = globalStats.filter(s => s.divisi === d).sort((a,b) => b.mpi - a.mpi)[0];
+            if(b && b.mpi > 0) bDivHtml += `<div>${d.toUpperCase()}: <span class="text-indigo-600 dark:text-indigo-400">${b.nama}</span></div>`;
+            else bDivHtml += `<div class="text-slate-300 uppercase">${d}: -</div>`;
         });
         document.getElementById('award-best-div').innerHTML = bDivHtml;
 
-        const ris = globalStats.filter(s => isEligible(s)).sort((a,b) => b.growth - a.growth)[0];
+        const ris = globalStats.sort((a,b) => b.growth - a.growth)[0];
         document.getElementById('award-rising').innerText = (prevTw && ris && ris.growth > 0) ? `${ris.nama} (+${ris.growth.toFixed(1)}%)` : "-";
 
-        const syn = globalStats.filter(s => isEligible(s)).sort((a,b) => b.sine - a.sine)[0];
+        const syn = globalStats.sort((a,b) => b.sine - a.sine)[0];
         document.getElementById('award-synergy').innerText = (syn && syn.sine > 0) ? syn.nama : "-";
     }
 
+    // RANKING AREA DENGAN PROTEKSI
     const rBody = document.getElementById('divisi-ranking-body');
     rBody.innerHTML = '';
     ['redaksi','jaker','psdm','medkraf'].map(d => {
@@ -327,6 +311,16 @@ function updateAdminDashboards() {
         return { d, score };
     }).sort((a,b) => b.score - a.score).forEach((r, i) => {
         let col = r.score >= 70 ? "text-emerald-500" : (r.score >= 50 ? "text-amber-500" : "text-rose-500");
-        rBody.innerHTML += `<div class="p-4 flex justify-between items-center"><span class="text-slate-400 font-bold">#${i+1}</span><span class="uppercase font-black text-indigo-600 dark:text-indigo-400">${r.d}</span><span class="font-mono ${col}">${r.score.toFixed(2)}%</span></div>`;
+        
+        // Sembunyikan Nama dan Skor jika belum di-unlock
+        const displayDiv = isRankingUnlocked ? r.d : "SEKTOR " + (i+1);
+        const displayScore = isRankingUnlocked ? r.score.toFixed(2) + "%" : "??.??%";
+
+        rBody.innerHTML += `
+            <div class="p-4 flex justify-between items-center">
+                <span class="text-slate-400 font-bold">#${i+1}</span>
+                <span class="uppercase font-black text-indigo-600 dark:text-indigo-400 tracking-tighter">${displayDiv}</span>
+                <span class="font-mono ${isRankingUnlocked ? col : 'text-slate-300'}">${displayScore}</span>
+            </div>`;
     });
 }
