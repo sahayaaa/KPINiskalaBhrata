@@ -100,7 +100,7 @@ function unlockRanking() {
         return;
     }
     const pass = prompt("Masukkan Password Ring 1:");
-    if (pass === "niskala2026") {
+    if (pass === "meroket") {
         isRankingUnlocked = true;
         document.getElementById('divisi-ranking-body').classList.remove('blur-[6px]');
         document.getElementById('ranking-overlay').classList.add('hidden');
