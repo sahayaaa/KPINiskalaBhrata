@@ -44,10 +44,8 @@ let draftData = {};
 let database = {}; 
 let isRankingUnlocked = false;
 
-// List ID Anak Baru yang tidak bisa dapet award di TW1
 const anakBaruIds = [5, 6, 7, 8, 12, 13, 14, 15, 19, 20, 21, 22, 23, 26, 27, 28, 29, 30];
 
-// HELPER: Penentuan pemenang yang adil (MPI > Sinergi > Kuantitas > Kualitas)
 function findPeriodWinner(db, period) {
     let scores = dataStaff.map(s => {
         const d = db[`${s.id}_${period}`] || { mpi: '0.00%', sine: 0, kuan: 0, kual: 0 };
@@ -59,7 +57,6 @@ function findPeriodWinner(db, period) {
             kual: parseFloat(d.kual) || 0
         };
     })
-    // Filter out Anak Baru if period is TW1
     if (period === 'tw1') {
         scores = scores.filter(s => !anakBaruIds.includes(s.id));
     }
@@ -332,16 +329,18 @@ function updateAdminDashboards() {
             };
         });
 
-        // Filter untuk Award: Bukan Blacklisted DAN (Bukan Anak Baru jika TW1)
-        const eligibleForAwards = globalStats.filter(s => {
+        // KUNCI LOGIKA: 
+        // 1. Bukan Blacklisted (Mantan pemenang Supreme TW sebelumnya)
+        // 2. Bukan Anak Baru (Hanya jika sekarang TW1)
+        const eligibleForANYAward = globalStats.filter(s => {
             const mpiValid = s.mpi > 0;
-            const notBlacklisted = !s.isBlacklisted;
+            const notInPastWinners = !s.isBlacklisted; 
             const notNewInTw1 = (tw === 'tw1') ? !s.isAnakBaru : true;
-            return mpiValid && notBlacklisted && notNewInTw1;
+            return mpiValid && notInPastWinners && notNewInTw1;
         });
 
         // Supreme Achiever
-        const sup = [...eligibleForAwards].sort((a, b) => {
+        const sup = [...eligibleForANYAward].sort((a, b) => {
             if (b.mpi !== a.mpi) return b.mpi - a.mpi;
             if (b.sine !== a.sine) return b.sine - a.sine;
             if (b.kuan !== a.kuan) return b.kuan - a.kuan;
@@ -349,10 +348,14 @@ function updateAdminDashboards() {
         })[0];
         document.getElementById('award-supreme').innerText = sup ? sup.nama : "-";
 
-        // Best of Divisi
+        // Best of Divisi (Filter tambahan: tidak boleh sama dengan pemenang Supreme periode ini)
+        const finalEligibleForBestDiv = sup 
+            ? eligibleForANYAward.filter(s => s.id !== sup.id) 
+            : eligibleForANYAward;
+
         let bDivHtml = "";
         ['redaksi','jaker','psdm','medkraf'].forEach(d => {
-            const b = eligibleForAwards.filter(s => s.divisi === d).sort((a,b) => {
+            const b = finalEligibleForBestDiv.filter(s => s.divisi === d).sort((a,b) => {
                 if (b.mpi !== a.mpi) return b.mpi - a.mpi;
                 if (b.sine !== a.sine) return b.sine - a.sine;
                 return b.kuan - a.kuan;
@@ -362,16 +365,15 @@ function updateAdminDashboards() {
         });
         document.getElementById('award-best-div').innerHTML = bDivHtml;
 
-        // The Rising Star (Filter Anak Baru di TW1 juga berlaku di sini)
-        const ris = [...eligibleForAwards].sort((a,b) => b.growth - a.growth)[0];
+        // The Rising Star & Synergy (Juga menggunakan filter anti-mantan-juara)
+        const ris = [...eligibleForANYAward].sort((a,b) => b.growth - a.growth)[0];
         document.getElementById('award-rising').innerText = (prevTw && ris && ris.growth > 0) ? `${ris.nama} (+${ris.growth.toFixed(1)}%)` : "-";
 
-        // Synergy & Harmony
-        const syn = [...eligibleForAwards].sort((a,b) => b.sine - a.sine)[0];
+        const syn = [...eligibleForANYAward].sort((a,b) => b.sine - a.sine)[0];
         document.getElementById('award-synergy').innerText = syn ? syn.nama : "-";
     }
 
-    // RANKING AREA
+    // RANKING AREA (Sektor Divisi)
     const rBody = document.getElementById('divisi-ranking-body');
     rBody.innerHTML = '';
     ['redaksi','jaker','psdm','medkraf'].map(d => {
