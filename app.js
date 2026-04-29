@@ -44,6 +44,9 @@ let draftData = {};
 let database = {}; 
 let isRankingUnlocked = false;
 
+// List ID Anak Baru yang tidak bisa dapet award di TW1
+const anakBaruIds = [5, 6, 7, 8, 12, 13, 14, 15, 19, 20, 21, 22, 23, 26, 27, 28, 29, 30];
+
 // HELPER: Penentuan pemenang yang adil (MPI > Sinergi > Kuantitas > Kualitas)
 function findPeriodWinner(db, period) {
     let scores = dataStaff.map(s => {
@@ -55,7 +58,13 @@ function findPeriodWinner(db, period) {
             kuan: parseFloat(d.kuan) || 0,
             kual: parseFloat(d.kual) || 0
         };
-    }).sort((a,b) => {
+    })
+    // Filter out Anak Baru if period is TW1
+    if (period === 'tw1') {
+        scores = scores.filter(s => !anakBaruIds.includes(s.id));
+    }
+    
+    scores.sort((a,b) => {
         if (b.mpi !== a.mpi) return b.mpi - a.mpi;
         if (b.sine !== a.sine) return b.sine - a.sine;
         if (b.kuan !== a.kuan) return b.kuan - a.kuan;
@@ -152,7 +161,6 @@ function renderTable() {
     const filter = document.getElementById('filter-divisi').value;
     tbody.innerHTML = '';
 
-    // Logic Mahkota: Hanya tampil jika user adalah pemenang di triwulan yang sedang dilihat
     const currentWinnerId = (tw !== 'all') ? findPeriodWinner(database, tw) : null;
 
     const isAdmin = (currentUser === 'admin');
@@ -299,7 +307,6 @@ function updateAdminDashboards() {
         document.getElementById('award-rising').innerText = "-";
         document.getElementById('award-synergy').innerText = "-";
     } else {
-        // 1. Identifikasi Pemenang Supreme Hanya di Masa Lalu (Agar TW1 tidak ada blacklist)
         let blacklistSupreme = [];
         const triwulans = ['tw1', 'tw2', 'tw3'];
         const currentIdx = triwulans.indexOf(tw);
@@ -309,7 +316,6 @@ function updateAdminDashboards() {
             if (pastWinnerId) blacklistSupreme.push(pastWinnerId);
         }
 
-        // 2. Data untuk Triwulan Berjalan
         let globalStats = dataStaff.map(s => {
             const curr = database[`${s.id}_${tw}`] || { mpi: '0.00%', sine: 0, kuan: 0, kual: 0 };
             const m = parseFloat(curr.mpi);
@@ -321,15 +327,21 @@ function updateAdminDashboards() {
                 kuan: parseFloat(curr.kuan) || 0,
                 kual: parseFloat(curr.kual) || 0,
                 growth: pVal > 0 ? m - pVal : 0,
-                isBlacklisted: blacklistSupreme.includes(s.id)
+                isBlacklisted: blacklistSupreme.includes(s.id),
+                isAnakBaru: anakBaruIds.includes(s.id)
             };
         });
 
-        const activeStaff = globalStats.filter(s => s.mpi > 0);
+        // Filter untuk Award: Bukan Blacklisted DAN (Bukan Anak Baru jika TW1)
+        const eligibleForAwards = globalStats.filter(s => {
+            const mpiValid = s.mpi > 0;
+            const notBlacklisted = !s.isBlacklisted;
+            const notNewInTw1 = (tw === 'tw1') ? !s.isAnakBaru : true;
+            return mpiValid && notBlacklisted && notNewInTw1;
+        });
 
-        // Supreme Achiever (Hanya yang tidak kena blacklist masa lalu)
-        const eligibleForSupreme = activeStaff.filter(s => !s.isBlacklisted);
-        const sup = [...eligibleForSupreme].sort((a, b) => {
+        // Supreme Achiever
+        const sup = [...eligibleForAwards].sort((a, b) => {
             if (b.mpi !== a.mpi) return b.mpi - a.mpi;
             if (b.sine !== a.sine) return b.sine - a.sine;
             if (b.kuan !== a.kuan) return b.kuan - a.kuan;
@@ -340,7 +352,7 @@ function updateAdminDashboards() {
         // Best of Divisi
         let bDivHtml = "";
         ['redaksi','jaker','psdm','medkraf'].forEach(d => {
-            const b = activeStaff.filter(s => s.divisi === d).sort((a,b) => {
+            const b = eligibleForAwards.filter(s => s.divisi === d).sort((a,b) => {
                 if (b.mpi !== a.mpi) return b.mpi - a.mpi;
                 if (b.sine !== a.sine) return b.sine - a.sine;
                 return b.kuan - a.kuan;
@@ -350,12 +362,12 @@ function updateAdminDashboards() {
         });
         document.getElementById('award-best-div').innerHTML = bDivHtml;
 
-        // The Rising Star
-        const ris = [...activeStaff].sort((a,b) => b.growth - a.growth)[0];
+        // The Rising Star (Filter Anak Baru di TW1 juga berlaku di sini)
+        const ris = [...eligibleForAwards].sort((a,b) => b.growth - a.growth)[0];
         document.getElementById('award-rising').innerText = (prevTw && ris && ris.growth > 0) ? `${ris.nama} (+${ris.growth.toFixed(1)}%)` : "-";
 
         // Synergy & Harmony
-        const syn = [...activeStaff].sort((a,b) => b.sine - a.sine)[0];
+        const syn = [...eligibleForAwards].sort((a,b) => b.sine - a.sine)[0];
         document.getElementById('award-synergy').innerText = syn ? syn.nama : "-";
     }
 
