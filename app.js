@@ -42,7 +42,7 @@ const userAccounts = {
 let currentUser = "";
 let draftData = {}; 
 let database = {}; 
-let isRankingUnlocked = false; // Flag proteksi ranking
+let isRankingUnlocked = false;
 
 function syncFromFirebase() {
     db.ref("kpi_v2026_final").on('value', (snapshot) => {
@@ -132,6 +132,17 @@ function renderTable() {
     const filter = document.getElementById('filter-divisi').value;
     tbody.innerHTML = '';
 
+    // Logic untuk indikator mahkota (blacklist)
+    const triwulans = ['tw1', 'tw2', 'tw3'];
+    let allPastWinners = [];
+    triwulans.forEach(t => {
+        let winnersInTw = dataStaff.map(s => {
+            const d = database[`${s.id}_${t}`] || { mpi: '0.00%', sine: 0 };
+            return { id: s.id, mpi: parseFloat(d.mpi), sine: parseFloat(d.sine) || 0 };
+        }).sort((a,b) => b.mpi !== a.mpi ? b.mpi - a.mpi : b.sine - a.sine);
+        if(winnersInTw[0] && winnersInTw[0].mpi > 0) allPastWinners.push(winnersInTw[0].id);
+    });
+
     const isAdmin = (currentUser === 'admin');
     let list = isAdmin ? dataStaff : dataStaff.filter(s => s.divisi === currentUser);
     if (isAdmin && filter !== 'all') list = list.filter(s => s.divisi === filter);
@@ -168,9 +179,12 @@ function renderTable() {
             d = database[`${s.id}_${tw}`] || { kuan: '', kual: '', sine: '', mpi: '0.00%', status: 'KRITIS' };
         }
 
+        const isSupremePast = allPastWinners.includes(s.id);
         tbody.innerHTML += `
             <tr class="dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors text-center">
-                <td class="p-6 font-bold text-slate-700 dark:text-slate-200 text-left">${s.nama}</td>
+                <td class="p-6 font-bold text-slate-700 dark:text-slate-200 text-left">
+                    ${s.nama} ${isSupremePast ? '<span title="Mantan Supreme Achiever" class="text-amber-500 text-xs">👑</span>' : ''}
+                </td>
                 <td class="p-6 text-[10px] text-slate-400 font-black uppercase tracking-widest text-left">${s.divisi}</td>
                 <td class="p-2"><input type="number" id="kuan-${s.id}" value="${d.kuan}" oninput="limit(this, 60); calc(${s.id})" ${(isAdmin || tw === 'all') ? 'disabled' : ''}></td>
                 <td class="p-2"><input type="number" id="kual-${s.id}" value="${d.kual}" oninput="limit(this, 15); calc(${s.id})" ${(isAdmin || tw === 'all') ? 'disabled' : ''}></td>
@@ -272,29 +286,63 @@ function updateAdminDashboards() {
         document.getElementById('award-rising').innerText = "-";
         document.getElementById('award-synergy').innerText = "-";
     } else {
+        // 1. Identifikasi Pemenang Supreme Sebelumnya (Blacklist)
+        let blacklistSupreme = [];
+        const triwulans = ['tw1', 'tw2', 'tw3'];
+        const currentIdx = triwulans.indexOf(tw);
+        
+        for (let i = 0; i < currentIdx; i++) {
+            const pastTw = triwulans[i];
+            let pastStats = dataStaff.map(s => {
+                const d = database[`${s.id}_${pastTw}`] || { mpi: '0.00%', sine: 0 };
+                return { id: s.id, mpi: parseFloat(d.mpi), sine: parseFloat(d.sine) || 0 };
+            });
+            const pastWinner = pastStats.sort((a,b) => b.mpi !== a.mpi ? b.mpi - a.mpi : b.sine - a.sine)[0];
+            if (pastWinner && pastWinner.mpi > 0) blacklistSupreme.push(pastWinner.id);
+        }
+
+        // 2. Data untuk Triwulan Berjalan
         let globalStats = dataStaff.map(s => {
-            const curr = database[`${s.id}_${tw}`] || { mpi: '0.00%', sine: 0 };
+            const curr = database[`${s.id}_${tw}`] || { mpi: '0.00%', sine: 0, kual: 0 };
             const m = parseFloat(curr.mpi);
             const pVal = prevTw ? parseFloat(database[`${s.id}_${prevTw}`]?.mpi || 0) : 0;
-            return { ...s, mpi: m, sine: parseFloat(curr.sine) || 0, growth: pVal > 0 ? m - pVal : 0 };
+            return { 
+                ...s, 
+                mpi: m, 
+                sine: parseFloat(curr.sine) || 0, 
+                kual: parseFloat(curr.kual) || 0,
+                growth: pVal > 0 ? m - pVal : 0,
+                isBlacklisted: blacklistSupreme.includes(s.id)
+            };
         });
 
-        const sup = [...globalStats].sort((a,b) => b.mpi !== a.mpi ? b.mpi - a.mpi : b.sine - a.sine)[0];
-        document.getElementById('award-supreme').innerText = (sup && sup.mpi > 0) ? sup.nama : "-";
+        const activeStaff = globalStats.filter(s => s.mpi > 0);
 
+        // Supreme Achiever (Hanya yang tidak kena blacklist)
+        const eligibleForSupreme = activeStaff.filter(s => !s.isBlacklisted);
+        const sup = [...eligibleForSupreme].sort((a, b) => {
+            if (b.mpi !== a.mpi) return b.mpi - a.mpi;
+            if (b.sine !== a.sine) return b.sine - a.sine;
+            return b.kual - a.kual;
+        })[0];
+        document.getElementById('award-supreme').innerText = sup ? sup.nama : "-";
+
+        // Best of Divisi
         let bDivHtml = "";
         ['redaksi','jaker','psdm','medkraf'].forEach(d => {
-            const b = globalStats.filter(s => s.divisi === d).sort((a,b) => b.mpi - a.mpi)[0];
-            if(b && b.mpi > 0) bDivHtml += `<div>${d.toUpperCase()}: <span class="text-indigo-600 dark:text-indigo-400">${b.nama}</span></div>`;
+            const b = activeStaff.filter(s => s.divisi === d).sort((a,b) => b.mpi - a.mpi)[0];
+            if(b) bDivHtml += `<div>${d.toUpperCase()}: <span class="text-indigo-600 dark:text-indigo-400">${b.nama}</span></div>`;
             else bDivHtml += `<div class="text-slate-300 uppercase">${d}: -</div>`;
         });
         document.getElementById('award-best-div').innerHTML = bDivHtml;
 
-        const ris = globalStats.sort((a,b) => b.growth - a.growth)[0];
+        // The Rising Star
+        const ris = [...activeStaff].sort((a,b) => b.growth - a.growth)[0];
         document.getElementById('award-rising').innerText = (prevTw && ris && ris.growth > 0) ? `${ris.nama} (+${ris.growth.toFixed(1)}%)` : "-";
 
-        const syn = globalStats.sort((a,b) => b.sine - a.sine)[0];
-        document.getElementById('award-synergy').innerText = (syn && syn.sine > 0) ? syn.nama : "-";
+        // Synergy & Harmony
+        const syn = [...activeStaff].sort((a,b) => b.sine - a.sine)[0];
+        document.getElementById('award-synergy').innerText = syn ? syn.nama : "-";
     }
 
     // RANKING AREA DENGAN PROTEKSI
@@ -311,8 +359,6 @@ function updateAdminDashboards() {
         return { d, score };
     }).sort((a,b) => b.score - a.score).forEach((r, i) => {
         let col = r.score >= 70 ? "text-emerald-500" : (r.score >= 50 ? "text-amber-500" : "text-rose-500");
-        
-        // Sembunyikan Nama dan Skor jika belum di-unlock
         const displayDiv = isRankingUnlocked ? r.d : "SEKTOR " + (i+1);
         const displayScore = isRankingUnlocked ? r.score.toFixed(2) + "%" : "??.??%";
 
