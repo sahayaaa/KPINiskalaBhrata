@@ -16,3 +16,24 @@ input[type=number]:focus:not(:disabled) { border-color: #6366f1; background: whi
 input:disabled { opacity: 0.4; border-color: transparent !important; cursor: not-allowed; }
 
 input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* ===== Award: penanda riwayat di samping nama ===== */
+.award-badge { display: inline-flex; align-items: center; gap: 2px; font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 9999px; margin-left: 4px; vertical-align: middle; }
+.award-badge.supreme { background: #fef3c7; color: #d97706; }
+.award-badge.bestdiv { background: #e0e7ff; color: #4f46e5; }
+.award-badge.rising  { background: #ffedd5; color: #ea580c; }
+.award-badge.synergy { background: #d1fae5; color: #059669; }
+.dark .award-badge.supreme { background: rgba(120, 53, 15, 0.35); }
+.dark .award-badge.bestdiv { background: rgba(49, 46, 129, 0.4); color: #a5b4fc; }
+.dark .award-badge.rising  { background: rgba(124, 45, 18, 0.35); }
+.dark .award-badge.synergy { background: rgba(6, 78, 59, 0.35); }
+
+/* ===== Award: mode edit admin ===== */
+.award-select { width: 100%; font-size: 11px; font-weight: 700; padding: 6px; border-radius: 8px; border: 1px solid #e2e8f0; outline: none; background: white; color: #0f172a; }
+.dark .award-select { background: #1e293b; border-color: #334155; color: white; }
+.award-edit-row { margin-bottom: 6px; text-align: left; }
+.award-edit-label { display: block; font-size: 9px; text-transform: uppercase; color: #94a3b8; }
+
+.btn-edit-awards { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); font-size: 9px; font-weight: 900; font-style: normal; padding: 4px 12px; border-radius: 9999px; background: #e0e7ff; color: #4f46e5; transition: transform 0.2s; }
+.btn-edit-awards:hover { transform: translateY(-50%) scale(1.05); }
+.dark .btn-edit-awards { background: rgba(49, 46, 129, 0.4); color: #a5b4fc; }

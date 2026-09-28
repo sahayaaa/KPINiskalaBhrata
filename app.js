@@ -33,10 +33,10 @@ const dataStaff = [
 
 const userAccounts = {
     "admin": "admin13",
-    "psdm": "20psdm26",
-    "medkraf": "medkrafmania",
-    "jaker": "jakersolid",
-    "redaksi": "redaks1"
+    "psdm": "triwulandua",
+    "medkraf": "kreatifmedkraf",
+    "jaker": "jaringangawe",
+    "redaksi": "redaksiuu"
 };
 
 let currentUser = "";
@@ -46,28 +46,113 @@ let isRankingUnlocked = false;
 
 const anakBaruIds = [5, 6, 7, 8, 12, 13, 14, 15, 19, 20, 21, 22, 23, 26, 27, 28, 29, 30];
 
-function findPeriodWinner(db, period) {
-    let scores = dataStaff.map(s => {
-        const d = db[`${s.id}_${period}`] || { mpi: '0.00%', sine: 0, kuan: 0, kual: 0 };
-        return { 
-            id: s.id, 
-            mpi: parseFloat(d.mpi) || 0, 
-            sine: parseFloat(d.sine) || 0,
-            kuan: parseFloat(d.kuan) || 0,
-            kual: parseFloat(d.kual) || 0
+const TW_LIST = ['tw1', 'tw2', 'tw3'];
+const DIVISI_LIST = ['redaksi', 'jaker', 'psdm', 'medkraf'];
+let awardOverrides = {};      // { tw1: { supreme: id, redaksi: id, rising: id, synergy: id } }
+let isEditingAwards = false;
+
+function cmpScore(a, b) {
+    if (b.mpi !== a.mpi) return b.mpi - a.mpi;
+    if (b.sine !== a.sine) return b.sine - a.sine;
+    if (b.kuan !== a.kuan) return b.kuan - a.kuan;
+    return b.kual - a.kual;
+}
+
+function getTwStats(tw) {
+    const idx = TW_LIST.indexOf(tw);
+    const prevTw = idx > 0 ? TW_LIST[idx - 1] : null;
+    return dataStaff.map(s => {
+        const curr = database[`${s.id}_${tw}`] || {};
+        const m = parseFloat(curr.mpi) || 0;
+        const pVal = prevTw ? parseFloat(database[`${s.id}_${prevTw}`]?.mpi || 0) : 0;
+        return {
+            ...s,
+            mpi: m,
+            sine: parseFloat(curr.sine) || 0,
+            kuan: parseFloat(curr.kuan) || 0,
+            kual: parseFloat(curr.kual) || 0,
+            growth: pVal > 0 ? m - pVal : 0,
+            isAnakBaru: anakBaruIds.includes(s.id)
         };
-    })
-    if (period === 'tw1') {
-        scores = scores.filter(s => !anakBaruIds.includes(s.id));
-    }
-    
-    scores.sort((a,b) => {
-        if (b.mpi !== a.mpi) return b.mpi - a.mpi;
-        if (b.sine !== a.sine) return b.sine - a.sine;
-        if (b.kuan !== a.kuan) return b.kuan - a.kuan;
-        return b.kual - a.kual;
     });
-    return (scores[0] && scores[0].mpi > 0) ? scores[0].id : null;
+}
+
+// Hitung pemenang satu triwulan. blacklist = pemenang Supreme triwulan sebelumnya (tidak boleh dapat award apa pun).
+function computeAwards(tw, blacklist) {
+    const idx = TW_LIST.indexOf(tw);
+    const stats = getTwStats(tw);
+    const ov = awardOverrides[tw] || {};
+    const allowed = s => !blacklist.includes(s.id);
+
+    const eligible = stats.filter(s => s.mpi > 0 && allowed(s) && (tw !== 'tw1' || !s.isAnakBaru));
+
+    // Supreme: override admin (jika valid) > otomatis
+    let supreme = null;
+    const ovSup = stats.find(s => s.id === Number(ov.supreme));
+    if (ovSup && allowed(ovSup)) supreme = ovSup.id;
+    else supreme = [...eligible].sort(cmpScore)[0]?.id ?? null;
+
+    // Kategori lain: supreme periode ini tidak ikut
+    const pool = eligible.filter(s => s.id !== supreme);
+    const validOv = (key, extra = () => true) => {
+        const c = stats.find(s => s.id === Number(ov[key]));
+        return (c && allowed(c) && c.id !== supreme && extra(c)) ? c.id : null;
+    };
+
+    const bestDiv = {};
+    DIVISI_LIST.forEach(d => {
+        bestDiv[d] = validOv(d, c => c.divisi === d)
+            ?? [...pool].filter(s => s.divisi === d).sort(cmpScore)[0]?.id ?? null;
+    });
+
+    const rising = validOv('rising')
+        ?? (idx > 0 ? ([...pool].sort((a, b) => b.growth - a.growth).find(s => s.growth > 0)?.id ?? null) : null);
+
+    const synergy = validOv('synergy')
+        ?? [...pool].sort((a, b) => b.sine - a.sine)[0]?.id ?? null;
+
+    return { supreme, bestDiv, rising, synergy, blacklist: [...blacklist] };
+}
+
+// Hitung berurutan tw1 -> tw3, supaya pemenang Supreme otomatis masuk blacklist di triwulan berikutnya
+function computeAllAwards() {
+    const result = {};
+    let blacklist = [];
+    TW_LIST.forEach(tw => {
+        result[tw] = computeAwards(tw, blacklist);
+        if (result[tw].supreme) blacklist = [...blacklist, result[tw].supreme];
+    });
+    return result;
+}
+
+// Penanda riwayat award di samping nama (sampai triwulan yang sedang dilihat)
+function badgesFor(id, tw, awards) {
+    const last = (tw === 'all') ? TW_LIST.length - 1 : TW_LIST.indexOf(tw);
+    let html = '';
+    for (let i = 0; i <= last; i++) {
+        const a = awards[TW_LIST[i]];
+        const lbl = `TW${i + 1}`;
+        const chip = (icon, title, cls) =>
+            `<span title="${title} ${lbl}" class="award-badge ${cls}">${icon}${lbl}</span>`;
+        if (a.supreme === id) html += chip('👑', 'Supreme Achiever', 'supreme');
+        if (Object.values(a.bestDiv).includes(id)) html += chip('🏅', 'Best of Divisi', 'bestdiv');
+        if (a.rising === id) html += chip('🚀', 'Rising Star', 'rising');
+        if (a.synergy === id) html += chip('🤝', 'Synergy & Harmony', 'synergy');
+    }
+    return html;
+}
+
+function toggleEditAwards() {
+    isEditingAwards = !isEditingAwards;
+    const btn = document.getElementById('btn-edit-awards');
+    if (btn) btn.innerText = isEditingAwards ? '✅ SELESAI' : '✏️ EDIT AWARD';
+    updateAdminDashboards();
+}
+
+function setAwardOverride(tw, key, val) {
+    const ref = db.ref(`kpi_v2026_awards/${tw}/${key}`);
+    (val ? ref.set(Number(val)) : ref.remove())
+        .catch(() => alert("Gagal menyimpan perubahan award."));
 }
 
 function syncFromFirebase() {
@@ -81,6 +166,11 @@ function syncFromFirebase() {
     });
 }
 syncFromFirebase();
+
+db.ref("kpi_v2026_awards").on('value', (snapshot) => {
+    awardOverrides = snapshot.val() || {};
+    if (currentUser !== "") renderTable();
+});
 
 let currentSort = "none";
 
@@ -158,7 +248,7 @@ function renderTable() {
     const filter = document.getElementById('filter-divisi').value;
     tbody.innerHTML = '';
 
-    const currentWinnerId = (tw !== 'all') ? findPeriodWinner(database, tw) : null;
+    const awards = computeAllAwards();
 
     const isAdmin = (currentUser === 'admin');
     let list = isAdmin ? dataStaff : dataStaff.filter(s => s.divisi === currentUser);
@@ -196,12 +286,11 @@ function renderTable() {
             d = database[`${s.id}_${tw}`] || { kuan: '', kual: '', sine: '', mpi: '0.00%', status: 'KRITIS' };
         }
 
-        const isWinnerNow = (s.id === currentWinnerId);
         
         tbody.innerHTML += `
             <tr class="dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors text-center">
                 <td class="p-6 font-bold text-slate-700 dark:text-slate-200 text-left">
-                    ${s.nama} ${isWinnerNow ? '<span title="Supreme Achiever Periode Ini" class="text-amber-500 text-xs">👑</span>' : ''}
+                    ${s.nama} ${badgesFor(s.id, tw, awards)}
                 </td>
                 <td class="p-6 text-[10px] text-slate-400 font-black uppercase tracking-widest text-left">${s.divisi}</td>
                 <td class="p-2"><input type="number" id="kuan-${s.id}" value="${d.kuan}" oninput="limit(this, 60); calc(${s.id})" ${(isAdmin || tw === 'all') ? 'disabled' : ''}></td>
@@ -298,79 +387,56 @@ function updateAdminDashboards() {
     document.getElementById('res-kritis').innerText = countCrit;
 
     // AWARDS AREA
+    const editBtn = document.getElementById('btn-edit-awards');
     if (tw === 'all') {
+        if (editBtn) editBtn.classList.add('hidden');
         document.getElementById('award-supreme').innerText = "REKAP TAHUNAN";
         document.getElementById('award-best-div').innerText = "Mode Kumulatif Aktif";
         document.getElementById('award-rising').innerText = "-";
         document.getElementById('award-synergy').innerText = "-";
     } else {
-        let blacklistSupreme = [];
-        const triwulans = ['tw1', 'tw2', 'tw3'];
-        const currentIdx = triwulans.indexOf(tw);
-        
-        for (let i = 0; i < currentIdx; i++) {
-            const pastWinnerId = findPeriodWinner(database, triwulans[i]);
-            if (pastWinnerId) blacklistSupreme.push(pastWinnerId);
-        }
+        if (editBtn) editBtn.classList.remove('hidden');
+        const a = computeAllAwards()[tw];
+        const stats = getTwStats(tw);
+        const ov = awardOverrides[tw] || {};
+        const nameOf = id => stats.find(s => s.id === id)?.nama || null;
 
-        let globalStats = dataStaff.map(s => {
-            const curr = database[`${s.id}_${tw}`] || { mpi: '0.00%', sine: 0, kuan: 0, kual: 0 };
-            const m = parseFloat(curr.mpi);
-            const pVal = prevTw ? parseFloat(database[`${s.id}_${prevTw}`]?.mpi || 0) : 0;
-            return { 
-                ...s, 
-                mpi: m, 
-                sine: parseFloat(curr.sine) || 0, 
-                kuan: parseFloat(curr.kuan) || 0,
-                kual: parseFloat(curr.kual) || 0,
-                growth: pVal > 0 ? m - pVal : 0,
-                isBlacklisted: blacklistSupreme.includes(s.id),
-                isAnakBaru: anakBaruIds.includes(s.id)
+        if (!isEditingAwards) {
+            document.getElementById('award-supreme').innerText = nameOf(a.supreme) || "-";
+
+            let bDivHtml = "";
+            DIVISI_LIST.forEach(d => {
+                const n = nameOf(a.bestDiv[d]);
+                if (n) bDivHtml += `<div>${d.toUpperCase()}: <span class="text-indigo-600 dark:text-indigo-400">${n}</span></div>`;
+                else bDivHtml += `<div class="text-slate-300 uppercase">${d}: -</div>`;
+            });
+            document.getElementById('award-best-div').innerHTML = bDivHtml;
+
+            const ris = stats.find(s => s.id === a.rising);
+            document.getElementById('award-rising').innerText = ris
+                ? (ris.growth > 0 ? `${ris.nama} (+${ris.growth.toFixed(1)}%)` : ris.nama) : "-";
+            document.getElementById('award-synergy').innerText = nameOf(a.synergy) || "-";
+        } else {
+            // MODE EDIT: pilih siapa yang dinaikkan (Supreme lama otomatis tidak muncul)
+            const byName = (x, y) => x.nama.localeCompare(y.nama);
+            const candAll = stats.filter(s => !a.blacklist.includes(s.id)).sort(byName);
+            const candOthers = candAll.filter(s => s.id !== a.supreme);
+            const selectHtml = (key, list, currentId) => {
+                const isOv = ov[key] != null && Number(ov[key]) === currentId;
+                return `<select onchange="setAwardOverride('${tw}','${key}',this.value)"
+                    class="award-select">
+                    <option value="">Otomatis${(!isOv && currentId) ? ' (' + nameOf(currentId) + ')' : ''}</option>
+                    ${list.map(s => `<option value="${s.id}" ${isOv && s.id === currentId ? 'selected' : ''}>${s.nama} (${s.mpi.toFixed(1)}%)</option>`).join('')}
+                </select>`;
             };
-        });
 
-        // KUNCI LOGIKA: 
-        // 1. Bukan Blacklisted (Mantan pemenang Supreme TW sebelumnya)
-        // 2. Bukan Anak Baru (Hanya jika sekarang TW1)
-        const eligibleForANYAward = globalStats.filter(s => {
-            const mpiValid = s.mpi > 0;
-            const notInPastWinners = !s.isBlacklisted; 
-            const notNewInTw1 = (tw === 'tw1') ? !s.isAnakBaru : true;
-            return mpiValid && notInPastWinners && notNewInTw1;
-        });
-
-        // Supreme Achiever
-        const sup = [...eligibleForANYAward].sort((a, b) => {
-            if (b.mpi !== a.mpi) return b.mpi - a.mpi;
-            if (b.sine !== a.sine) return b.sine - a.sine;
-            if (b.kuan !== a.kuan) return b.kuan - a.kuan;
-            return b.kual - a.kual;
-        })[0];
-        document.getElementById('award-supreme').innerText = sup ? sup.nama : "-";
-
-        // Best of Divisi (Filter tambahan: tidak boleh sama dengan pemenang Supreme periode ini)
-        const finalEligibleForBestDiv = sup 
-            ? eligibleForANYAward.filter(s => s.id !== sup.id) 
-            : eligibleForANYAward;
-
-        let bDivHtml = "";
-        ['redaksi','jaker','psdm','medkraf'].forEach(d => {
-            const b = finalEligibleForBestDiv.filter(s => s.divisi === d).sort((a,b) => {
-                if (b.mpi !== a.mpi) return b.mpi - a.mpi;
-                if (b.sine !== a.sine) return b.sine - a.sine;
-                return b.kuan - a.kuan;
-            })[0];
-            if(b) bDivHtml += `<div>${d.toUpperCase()}: <span class="text-indigo-600 dark:text-indigo-400">${b.nama}</span></div>`;
-            else bDivHtml += `<div class="text-slate-300 uppercase">${d}: -</div>`;
-        });
-        document.getElementById('award-best-div').innerHTML = bDivHtml;
-
-        // The Rising Star & Synergy (Juga menggunakan filter anti-mantan-juara)
-        const ris = [...eligibleForANYAward].sort((a,b) => b.growth - a.growth)[0];
-        document.getElementById('award-rising').innerText = (prevTw && ris && ris.growth > 0) ? `${ris.nama} (+${ris.growth.toFixed(1)}%)` : "-";
-
-        const syn = [...eligibleForANYAward].sort((a,b) => b.sine - a.sine)[0];
-        document.getElementById('award-synergy').innerText = syn ? syn.nama : "-";
+            document.getElementById('award-supreme').innerHTML = selectHtml('supreme', candAll, a.supreme);
+            document.getElementById('award-best-div').innerHTML = DIVISI_LIST.map(d =>
+                `<div class="award-edit-row"><span class="award-edit-label">${d}</span>${selectHtml(d, candOthers.filter(s => s.divisi === d), a.bestDiv[d])}</div>`
+            ).join('');
+            document.getElementById('award-rising').innerHTML = selectHtml('rising', candOthers, a.rising);
+            document.getElementById('award-synergy').innerHTML = selectHtml('synergy', candOthers, a.synergy);
+        }
     }
 
     // RANKING AREA (Sektor Divisi)
